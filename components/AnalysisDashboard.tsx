@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { CrawledJobData, TargetPosition, SalaryStats } from '../types';
-import { LOCATIONS, ALL_COMPETITORS } from '../constants';
+import { LOCATIONS } from '../constants';
 import { computeSalaryStats } from '../utils/calculations';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer 
@@ -17,6 +17,20 @@ export const AnalysisDashboard: React.FC<AnalysisDashboardProps> = ({ data, targ
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
   const [selectedCompetitors, setSelectedCompetitors] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>('');
+
+  // 1. Dynamic Competitor Options: 
+  // Only show competitors from Target Positions that actually have collected data.
+  const availableCompetitors = useMemo(() => {
+    // Get unique TargetPosition IDs present in the collected data
+    const collectedTargetIds = new Set(data.map(d => d.targetPositionId));
+    
+    // Find the TargetPosition definitions that match these IDs
+    const activePositions = targetPositions.filter(p => collectedTargetIds.has(p.id));
+    
+    // Extract competitors from these positions, flatten, and deduplicate
+    const allComps = activePositions.flatMap(p => p.competitors);
+    return Array.from(new Set(allComps)).sort();
+  }, [data, targetPositions]);
 
   // Filter Data based on selection
   const filteredData = useMemo(() => {
@@ -56,6 +70,13 @@ export const AnalysisDashboard: React.FC<AnalysisDashboardProps> = ({ data, targ
         return true;
     });
   }, [filteredData, targetPositions, searchQuery]);
+
+  // 2. Valid Data Count Optimization:
+  // Count the sum of sample sizes from the Aggregated Stats (which respects the search filter).
+  // This accurately reflects the data currently being visualized in the charts/cards.
+  const validDataCount = useMemo(() => {
+    return aggregatedStats.reduce((acc, curr) => acc + curr.sampleSize, 0);
+  }, [aggregatedStats]);
 
   // Prepare chart data (Comparing Median P50 across positions)
   const chartData = aggregatedStats.map(stat => ({
@@ -151,11 +172,11 @@ export const AnalysisDashboard: React.FC<AnalysisDashboardProps> = ({ data, targ
                   placeholder="全部地点"
               />
 
-              {/* Multi-Select Competitors */}
+              {/* Multi-Select Competitors (Dynamic) */}
               <MultiSelect 
                   label="竞品筛选" 
                   icon={<Building2 className="w-3 h-3" />}
-                  options={ALL_COMPETITORS}
+                  options={availableCompetitors}
                   selected={selectedCompetitors}
                   onChange={setSelectedCompetitors}
                   placeholder="全部公司"
@@ -164,7 +185,7 @@ export const AnalysisDashboard: React.FC<AnalysisDashboardProps> = ({ data, targ
 
           <div className="flex items-center gap-4 w-full xl:w-auto justify-between xl:justify-end mt-4 xl:mt-0 border-t xl:border-t-0 pt-4 xl:pt-0">
              <div className="text-sm text-gray-500 whitespace-nowrap">
-                有效数据: <span className="font-bold text-brand-600">{filteredData.length}</span> / {data.length}
+                有效数据: <span className="font-bold text-brand-600">{validDataCount}</span> / {data.length}
              </div>
              <button
                 onClick={handleExport}
@@ -341,29 +362,33 @@ const MultiSelect: React.FC<{
                                 onClick={handleSelectAll}
                                 className="flex items-center px-2 py-1.5 rounded-md hover:bg-gray-50 cursor-pointer text-xs font-medium text-brand-600"
                              >
-                                {selected.length === options.length ? '取消全选' : '全选'}
+                                {selected.length === options.length && options.length > 0 ? '取消全选' : '全选'}
                              </div>
                         </div>
                         <div className="p-1">
-                            {options.map(option => {
-                                const isSelected = selected.includes(option);
-                                return (
-                                    <div 
-                                        key={option}
-                                        onClick={() => toggleOption(option)}
-                                        className={`flex items-center px-3 py-2 cursor-pointer rounded-md text-sm transition-colors ${
-                                            isSelected ? 'bg-brand-50 text-brand-700' : 'text-gray-700 hover:bg-gray-50'
-                                        }`}
-                                    >
-                                        <div className={`w-4 h-4 rounded border flex items-center justify-center mr-3 transition-colors ${
-                                            isSelected ? 'bg-brand-500 border-brand-500' : 'border-gray-300 bg-white'
-                                        }`}>
-                                            {isSelected && <Check className="w-3 h-3 text-white" />}
+                            {options.length === 0 ? (
+                                <div className="px-3 py-2 text-gray-400 text-xs text-center">无可选竞品</div>
+                            ) : (
+                                options.map(option => {
+                                    const isSelected = selected.includes(option);
+                                    return (
+                                        <div 
+                                            key={option}
+                                            onClick={() => toggleOption(option)}
+                                            className={`flex items-center px-3 py-2 cursor-pointer rounded-md text-sm transition-colors ${
+                                                isSelected ? 'bg-brand-50 text-brand-700' : 'text-gray-700 hover:bg-gray-50'
+                                            }`}
+                                        >
+                                            <div className={`w-4 h-4 rounded border flex items-center justify-center mr-3 transition-colors ${
+                                                isSelected ? 'bg-brand-500 border-brand-500' : 'border-gray-300 bg-white'
+                                            }`}>
+                                                {isSelected && <Check className="w-3 h-3 text-white" />}
+                                            </div>
+                                            <span className="truncate">{option}</span>
                                         </div>
-                                        <span className="truncate">{option}</span>
-                                    </div>
-                                );
-                            })}
+                                    );
+                                })
+                            )}
                         </div>
                     </div>
                 )}
