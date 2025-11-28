@@ -1,54 +1,146 @@
-# Market Compensation Survey System - Requirements Document
+# 市场薪酬调研系统 - 需求规格说明书 (PRD)
 
-## 1. Project Overview
-The Market Compensation Survey System is a web-based application designed to streamline the process of collecting, analyzing, and reporting on market salary data for specific job positions. It automates the "crawling" (via AI simulation) of recruitment data and performs statistical analysis to derive key compensation benchmarks (P25, P50, P75).
+## 1. 引言
 
-## 2. Functional Requirements
+### 1.1 项目背景
+本系统旨在为人力资源部门提供一个高效的市场薪酬数据采集与分析工具。通过模拟爬取主流招聘网站（如 BOSS 直聘、智联招聘等）的数据，系统能够自动清洗、汇总并计算目标岗位的薪酬分位值（P25, P50, P75），帮助企业制定具有竞争力的薪酬策略。
 
-### 2.1 Data Collection (Crawling Simulation)
-*   **Target Definitions:** The system allows defining target job positions with specific attributes:
-    *   Job Name (e.g., Cross-border Supplier Development)
-    *   Job Category
-    *   Responsibilities Snippet
-    *   Search Keywords
-    *   Competitor List
-*   **Simulated Crawling:** Due to browser limitations, the system uses the Gemini API to generate realistic market data based on the defined keywords and competitors.
-*   **Data Points:** For each crawled job, the system captures:
-    *   External Job Title
-    *   Company Name
-    *   Base Location (City)
-    *   Monthly Salary Range (Min/Max)
-    *   Months Per Year (e.g., 12, 13, 14 salary structure)
-    *   Benefits (e.g., Meal allowance, Overtime pay)
+### 1.2 系统目标
+*   **数据采集自动化**：支持单点采集、批量一键采集及 Excel 导入岗位配置。
+*   **数据分析智能化**：自动计算月薪与年薪的统计指标，支持通过地点和竞品进行多维筛选。
+*   **报表输出便捷化**：提供可视化的图表分析及 Excel 报表导出功能。
 
-### 2.2 Data Analysis & Calculation
-*   **Data Aggregation:** Consolidates data per target position.
-*   **Filtering:** Users can filter the dataset used for calculation by:
-    *   **Base Location:** (e.g., Guangzhou, Shenzhen, Fuzhou).
-    *   **Competitors:** Filter specifically for defined competitor companies vs. general market data.
-*   **Statistical Formulas:**
-    *   **Linear Interpolation Method:**
-        *   Sort data ascending ($n$ items).
-        *   Calculate Position $L = (Percentile / 100) * (n + 1)$.
-        *   Interpolate value between floor($L$) and ceil($L$).
-    *   **Metrics:** Low (Min), P25, P50 (Median), P75, High (Max).
-    *   **Dimensions:** Both Monthly Salary and Total Annual Compensation.
+---
 
-### 2.3 Visualization
-*   **Raw Data View:** A tabular view of all collected job postings for transparency.
-*   **Summary Dashboard:**
-    *   Card-based layout for each Target Position.
-    *   Comparative tables for Monthly vs. Yearly stats.
-    *   Visual Bar Charts comparing Median (P50) salaries across positions.
+## 2. 系统架构与数据流转
 
-## 3. Non-Functional Requirements
-*   **UI/UX:** Minimalist, clean interface using Tailwind CSS.
-*   **Performance:** Client-side calculation for instant feedback when filtering.
-*   **Reliability:** Fallback mechanisms for API generation failures.
-*   **Privacy:** No real user data is stored; session-based data handling.
+### 2.1 数据流转图
+```mermaid
+graph TD
+    A[用户] -->|1. 添加/导入岗位| B(岗位管理状态 TargetPositions)
+    A -->|2. 点击采集/批量采集| C{Gemini AI 服务}
+    C -->|3. 生成模拟招聘数据 JSON| D[原始数据存储 App State]
+    D -->|4. 传入分析模块| E[数据清洗与筛选]
+    E -->|5. 筛选条件 (地点/竞品)| F[有效数据集]
+    F -->|6. 统计算法 (分位值计算)| G[分析结果 Dashboard]
+    G -->|7. 导出| H[Excel 报表]
+```
 
-## 4. Technical Stack
-*   **Frontend:** React 18, TypeScript, Vite.
-*   **Styling:** Tailwind CSS.
-*   **Charts:** Recharts.
-*   **AI Integration:** Google Gemini API (via `@google/genai`).
+### 2.2 核心逻辑说明
+
+#### 2.2.1 模拟爬虫逻辑 (Crawler Simulation)
+由于浏览器端无法直接运行真实的跨域爬虫，本系统集成 **Google Gemini 2.5 Flash 模型** 模拟爬取过程：
+*   **输入**：岗位名称、搜索关键词、竞品公司列表、目标城市。
+*   **处理**：AI 根据 prompt 生成符合 JSON 结构的虚构招聘数据，包含薪资范围（Min-Max）、发薪月数、福利、公司名及 JD 链接。
+*   **输出**：结构化的 `CrawledJobData` 数组。
+
+#### 2.2.2 薪酬计算逻辑 (Statistical Calculation)
+采用 **线性插值法 (Linear Interpolation)** 计算分位值，确保在样本量较小时也能得到平滑结果：
+1.  **排序**：将薪资数据从小到大排序。
+2.  **定位**：计算位置 $L = (P/100) \times (n + 1)$，其中 $P$ 为分位数（25, 50, 75），$n$ 为样本量。
+3.  **插值**：如果 $L$ 不是整数，取 $floor(L)$ 和 $ceil(L)$ 对应的值进行加权平均。
+4.  **维度**：同时计算 **月薪** (Monthly) 和 **年薪** (Yearly = 月薪 × 发薪月数)。
+
+---
+
+## 3. 功能模块详细说明
+
+### 3.1 导航栏
+*   **功能**：在“数据采集”和“市场分析”两个核心模块间切换。
+*   **逻辑**：点击 Tab 切换路由或组件显隐，保持 `targetPositions` (岗位配置) 和 `crawledData` (已采集数据) 的状态不丢失。
+
+### 3.2 数据采集模块 (Data Collection)
+
+此页面用于管理目标岗位并执行数据获取操作。
+
+#### 3.2.1 顶部操作区
+| 按钮/控件 | 逻辑说明 | 交互反馈 |
+| :--- | :--- | :--- |
+| **Excel 批量导入** | 点击触发文件选择框，解析 `.xlsx` 文件。需包含列：`岗位名称`, `岗位职责`, `关键词`, `竞品公司`。 | 成功：弹出提示“成功导入 N 个岗位”；失败：弹出错误提示。 |
+| **添加岗位** | 点击打开模态框（Modal），手动输入岗位信息。 | 填写完必填项后点击“确认添加”，列表即时更新。 |
+| **一键采集所有** | 遍历所有目标岗位，**串行**（Sequential）调用 AI 接口进行采集，每条间隔 500ms 防止限流。 | 按钮变为“正在批量采集...”，列表中的采集按钮逐个显示 Loading 状态。 |
+
+#### 3.2.2 目标岗位列表
+*   **显示字段**：岗位名称、职责摘要（截断显示）、搜索关键词、主要竞品、当前数据量。
+*   **操作列 - 采集/更新数据按钮**：
+    *   **逻辑**：调用 `simulateMarketCrawl` 接口。
+    *   **状态**：
+        *   初始状态：“开始采集”
+        *   已有数据：“更新数据”（点击后追加数据，不覆盖旧数据）
+        *   加载中：显示 Loading 图标，按钮禁用。
+
+#### 3.2.3 原始数据预览 (Raw Data Preview)
+*   **筛选下拉框**：
+    *   **逻辑**：仅列出**已有采集数据**的岗位名称。
+    *   **默认值**：“显示所有岗位数据”。
+    *   **行为**：选择特定岗位后，下方的表格仅展示属于该 ID 的招聘条目。
+*   **数据表格**：
+    *   **字段**：来源、目标岗位、招聘标题、职责摘要、公司名称（竞品标红）、地点、月薪范围、月数、福利、链接。
+    *   **链接**：点击跳转到生成的模拟招聘详情页（新标签页打开）。
+    *   **交互**：支持横向滚动查看完整列。
+
+### 3.3 市场分析模块 (Analysis Dashboard)
+
+此页面用于对已采集的数据进行清洗、筛选和统计展示。
+
+#### 3.3.1 筛选工具栏
+*   **搜索岗位 (Search)**：
+    *   **UI**：带输入建议（Datalist）的输入框。
+    *   **逻辑**：输入字符时，实时过滤下方的“分析卡片”。支持模糊匹配岗位名称。
+*   **Base 地点筛选 (Location Filter)**：
+    *   **UI**：自定义多选下拉框 (Multi-select)。
+    *   **逻辑**：
+        *   **未选**：默认为“全部地点”，参与计算所有数据。
+        *   **已选**：仅保留 `JobLocation` 包含任一选中地点的记录（OR 逻辑）。
+*   **竞品筛选 (Competitor Filter)**：
+    *   **UI**：自定义多选下拉框。
+    *   **数据源**：**动态生成**。仅显示当前已采集数据中涉及到的目标岗位配置的竞品公司列表。
+    *   **逻辑**：
+        *   **未选**：默认为“全部公司”（包含竞品及非竞品）。
+        *   **已选**：仅保留 `CompanyName` 包含任一选中竞品名称的记录。
+
+#### 3.3.2 数据概览与操作
+*   **有效数据统计**：
+    *   **逻辑**：`Sum(当前筛选条件下所有可见卡片的样本量)`。反映了当前报表基于多少条原始数据计算而来。
+*   **导出报表按钮**：
+    *   **逻辑**：将当前筛选后的分析结果（即页面展示的卡片数据）导出为 Excel 文件。
+    *   **文件名格式**：`薪酬调研分析_YYYY-MM-DD.xlsx`。
+    *   **包含字段**：岗位名称、样本量、月薪(Min/P25/P50/P75/Max)、年薪(Min/P25/P50/P75/Max)。
+
+#### 3.3.3 分析卡片 (Stats Card)
+每个目标岗位对应一张卡片，仅当样本量 > 0 且符合搜索条件时显示。
+*   **头部**：显示岗位名称、当前筛选后的样本量、月薪中位数高亮展示。
+*   **月薪分析表**：展示 Min, P25, P50, P75, Max 的月薪统计（人民币）。
+*   **年薪分析表**：展示 Min, P25, P50, P75, Max 的年薪统计（考虑了 13薪/14薪等因素）。
+*   **视觉**：P50 行背景加深高亮，便于快速查阅。
+
+#### 3.3.4 薪酬中位数对比图 (Chart)
+*   **类型**：柱状图 (Bar Chart)。
+*   **X轴**：岗位名称。
+*   **Y轴**：金额 (RMB)。
+*   **系列**：
+    *   蓝色柱：月薪中位数。
+    *   绿色柱：年薪中位数。
+*   **交互**：悬停显示具体数值。
+
+---
+
+## 4. 非功能需求
+
+### 4.1 性能与体验
+*   **响应速度**：筛选操作需在 100ms 内完成，实现“即输即显”的流畅体验。
+*   **异常处理**：若 API 调用失败（如 Key 无效或网络问题），需在界面显示红色错误提示，不阻塞其他操作。
+*   **空状态设计**：在无数据、无搜索结果时提供明确的引导文案和占位图标。
+
+### 4.2 兼容性
+*   系统适配 Chrome, Edge, Safari 等主流现代浏览器。
+*   支持响应式布局，适配 1366x768 及以上分辨率屏幕。
+
+## 5. 附录：Excel 导入模板规范
+
+| 列名 (支持别名) | 必填 | 说明 |
+| :--- | :--- | :--- |
+| **岗位名称** (Position) | 是 | 目标岗位的标准名称 |
+| **岗位职责** (Responsibilities) | 是 | 简要描述，用于辅助 AI 生成匹配数据 |
+| **关键词** (Keywords) | 否 | 多个关键词用逗号分隔 |
+| **竞品公司** (Competitors) | 否 | 多个公司名用逗号分隔 |
